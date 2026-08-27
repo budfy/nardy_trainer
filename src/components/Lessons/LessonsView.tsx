@@ -15,6 +15,7 @@ import {
   playCheckerSound,
   playHitBlotSound,
   playSuccessSound,
+  playMistakeSound,
 } from '../../utils/audioFx';
 import {
   BookOpen,
@@ -27,6 +28,8 @@ import {
   ArrowRight,
   Trophy,
   Tag,
+  XCircle,
+  AlertTriangle,
 } from 'lucide-react';
 
 const LESSONS_STORAGE_KEY = 'backgammon_lessons_state_v1';
@@ -99,6 +102,9 @@ export const LessonsView: React.FC = () => {
     () => savedState?.stepMovesPlayed || []
   );
 
+  const [isStepIncorrect, setIsStepIncorrect] = useState<boolean>(false);
+  const [incorrectFeedback, setIncorrectFeedback] = useState<string>('');
+
   // Persist lessons state to localStorage
   useEffect(() => {
     try {
@@ -133,6 +139,8 @@ export const LessonsView: React.FC = () => {
     setRemainingDice([...step.dice]);
     setSelectedPoint(null);
     setIsStepCompleted(false);
+    setIsStepIncorrect(false);
+    setIncorrectFeedback('');
     setStepMovesPlayed([]);
   };
 
@@ -202,6 +210,8 @@ export const LessonsView: React.FC = () => {
 
         if (isMatch) {
           setIsStepCompleted(true);
+          setIsStepIncorrect(false);
+          setIncorrectFeedback('');
           playSuccessSound();
           confetti({
             particleCount: 50,
@@ -209,6 +219,18 @@ export const LessonsView: React.FC = () => {
             origin: { y: 0.7 },
           });
           setCompletedSteps((prev) => new Set(prev).add(currentStep.id));
+        } else {
+          // Check if turn ended with an incorrect move
+          const remMoves = getAvailableMoves(currentBoard, nextDice, currentStep.playerTurn);
+          if (nextDice.length === 0 || remMoves.length === 0) {
+            setIsStepIncorrect(true);
+            playMistakeSound();
+            setIncorrectFeedback(
+              currentStep.hint
+                ? `Хід не відповідає меті завдання. ${currentStep.hint}`
+                : 'Хід не відповідає меті уроку. Натисніть кнопку нижче, щоб скинути позицію та спробувати ще раз.'
+            );
+          }
         }
       }
       return;
@@ -274,6 +296,8 @@ export const LessonsView: React.FC = () => {
 
       if (isMatch) {
         setIsStepCompleted(true);
+        setIsStepIncorrect(false);
+        setIncorrectFeedback('');
         playSuccessSound();
         confetti({
           particleCount: 50,
@@ -281,9 +305,22 @@ export const LessonsView: React.FC = () => {
           origin: { y: 0.7 },
         });
         setCompletedSteps((prev) => new Set(prev).add(currentStep.id));
+      } else {
+        // Check if turn ended with an incorrect move or no further moves can solve it
+        const remMoves = getAvailableMoves(newBoard, nextDice, currentStep.playerTurn);
+        if (nextDice.length === 0 || remMoves.length === 0) {
+          setIsStepIncorrect(true);
+          playMistakeSound();
+          setIncorrectFeedback(
+            currentStep.hint
+              ? `Хід не відповідає меті завдання. ${currentStep.hint}`
+              : 'Хід не відповідає меті уроку. Натисніть кнопку нижче, щоб скинути позицію та спробувати ще раз.'
+          );
+        }
       }
     }
   };
+
 
   const [showAllCompletedModal, setShowAllCompletedModal] = useState<boolean>(false);
   const [showTacticalLabels, setShowTacticalLabels] = useState<boolean>(true);
@@ -365,7 +402,11 @@ export const LessonsView: React.FC = () => {
 
               <button
                 onClick={handleResetStep}
-                className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-bold flex items-center gap-1.5 transition-colors border border-stone-700"
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border ${
+                  isStepIncorrect
+                    ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-400 shadow-lg shadow-rose-600/40 animate-pulse'
+                    : 'bg-stone-800 hover:bg-stone-700 text-stone-300 border-stone-700'
+                }`}
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>Скинути крок</span>
@@ -432,6 +473,18 @@ export const LessonsView: React.FC = () => {
                 <ArrowRight className="w-4 h-4" />
               </motion.button>
             )}
+
+            {isStepIncorrect && !isStepCompleted && (
+              <motion.button
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                onClick={handleResetStep}
+                className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-rose-600/30 active:scale-95 transition-all cursor-pointer animate-pulse"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>Спробувати знову</span>
+              </motion.button>
+            )}
           </div>
         </div>
 
@@ -491,8 +544,35 @@ export const LessonsView: React.FC = () => {
               )}
             </AnimatePresence>
 
+            {/* Incorrect Move Feedback Banner */}
+            <AnimatePresence>
+              {isStepIncorrect && !isStepCompleted && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className="p-4 bg-rose-950/80 border-2 border-rose-500/60 rounded-2xl text-xs space-y-3 shadow-lg shadow-rose-950/50"
+                >
+                  <div className="font-black text-rose-300 flex items-center gap-2 text-sm">
+                    <XCircle className="w-5 h-5 text-rose-400 shrink-0" />
+                    <span>Хід не відповідає меті уроку</span>
+                  </div>
+                  <p className="text-rose-100 leading-relaxed">
+                    {incorrectFeedback || currentStep.hint || 'Спробуйте скинути позицію та зробити правильний хід згідно з інструкцією.'}
+                  </p>
+                  <button
+                    onClick={handleResetStep}
+                    className="w-full py-2.5 px-4 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-md transition-transform active:scale-95 cursor-pointer text-xs"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>Скинути позицію та спробувати ще раз</span>
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {/* Hint toggle */}
-            {!isStepCompleted && currentStep.hint && (
+            {!isStepCompleted && !isStepIncorrect && currentStep.hint && (
               <div className="p-3 bg-stone-950/40 rounded-xl border border-stone-800/80 text-xs text-stone-400 flex items-start gap-2">
                 <Lightbulb className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                 <span><strong>Підказка:</strong> {currentStep.hint}</span>
